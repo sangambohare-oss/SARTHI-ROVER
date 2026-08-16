@@ -1,15 +1,24 @@
-# Production Dockerfile for AgriVision AI Backend Service
-FROM node:18-alpine
+# Stage 1: Build Frontend
+FROM node:20-slim AS frontend-builder
+WORKDIR /app/project
+COPY project/package*.json ./
+RUN npm install --no-audit
+COPY project/ ./
+RUN npm run build
 
-# Create app directory
+# Stage 2: Runtime Backend
+FROM node:20-slim
 WORKDIR /usr/src/app
 
-# Install app dependencies
+# Install root dependencies
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev --no-audit
 
-# Bundle app source
+# Copy backend source
 COPY . .
+
+# Copy built frontend from Stage 1 into project/dist
+COPY --from=frontend-builder /app/project/dist ./project/dist
 
 # Expose port
 EXPOSE 5000
@@ -22,7 +31,8 @@ ENV CORS_ORIGIN=*
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+  CMD node -e "require('http').get('http://localhost:5000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); })" || exit 1
 
-# Start the backend server
+# Start the unified backend and frontend server
 CMD [ "npm", "start" ]
+
